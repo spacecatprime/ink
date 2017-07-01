@@ -13,16 +13,29 @@ namespace Ink.Parsed
     internal class Sequence : Parsed.Object
     {
 
-        public List<ContentList> sequenceElements;
+        public List<Parsed.Object> sequenceElements;
         public SequenceType sequenceType;
 
-        public Sequence (List<ContentList> sequenceElements, SequenceType sequenceType)
+        public Sequence (List<ContentList> elementContentLists, SequenceType sequenceType)
         {
             this.sequenceType = sequenceType;
-            this.sequenceElements = sequenceElements;
+            this.sequenceElements = new List<Parsed.Object> ();
 
-            foreach (var sequenceContentList in sequenceElements) {
-                AddContent (sequenceContentList);
+            foreach (var elementContentList in elementContentLists) {
+
+                var contentObjs = elementContentList.content;
+
+                Parsed.Object seqElObject = null;
+
+                // Don't attempt to create a weave for the sequence element 
+                // if the content list is empty. Weaves don't like it!
+                if (contentObjs == null || contentObjs.Count == 0)
+                    seqElObject = elementContentList;
+                else
+                    seqElObject = new Weave (contentObjs);
+                
+                this.sequenceElements.Add (seqElObject);
+                AddContent (seqElObject);
             }
         }
 
@@ -101,11 +114,13 @@ namespace Ink.Parsed
 
                 // Divert branch for this sequence element
                 var sequenceDivert = new Runtime.Divert ();
-                container.AddContent (new Runtime.Branch (sequenceDivert));
+                sequenceDivert.isConditional = true;
+                container.AddContent (sequenceDivert);
 
                 // Generate content for this sequence element
                 var contentContainerForSequenceBranch = (Runtime.Container) el.runtimeObject;
                 contentContainerForSequenceBranch.name = "s" + elIndex;
+                contentContainerForSequenceBranch.InsertContent (Runtime.ControlCommand.PopEvaluatedValue (), 0);
 
                 // When sequence element is complete, divert back to end of sequence
                 var seqBranchCompleteDivert = new Runtime.Divert ();

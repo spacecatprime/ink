@@ -10,10 +10,7 @@ namespace Ink.Parsed
         //   - the true branch
         //   - the false branch
         // }
-        public bool isBoolCondition { get; set; }
-
-        // whether it's the "true" branch or "false" branch when it's a bool condition
-        public bool boolRequired { get; set; }
+        public bool isTrueBranch { get; set; }
 
         // When each branch has its own expression like a switch statement,
         // this is non-null. e.g.
@@ -42,8 +39,7 @@ namespace Ink.Parsed
         // }
         public bool shouldMatchEquality { get; set; }
 
-        // used for else branches
-        public bool alwaysMatch { get; set; }
+        public bool isElse { get; set; }
 
         public Runtime.Divert returnDivert { get; protected set; }
 
@@ -63,55 +59,59 @@ namespace Ink.Parsed
         //         (owner Conditional is in control of this target point)
         public override Runtime.Object GenerateRuntimeObject ()
         {
+            // Check for common mistake, of putting "else:" instead of "- else:"
+            if (_innerWeave) {
+                foreach (var c in _innerWeave.content) {
+                    var text = c as Parsed.Text;
+                    if (text) {
+                        // Don't need to trim at the start since the parser handles that already
+                        if (text.text.StartsWith ("else:", System.StringComparison.InvariantCulture)) {
+                            Warning ("Saw the text 'else:' which is being treated as content. Did you mean '- else:'?", text);
+                        }
+                    }
+                }
+            }
+                                           
             var container = new Runtime.Container ();
 
             // Are we testing against a condition that's used for more than just this
             // branch? If so, the first thing we need to do is replicate the value that's
             // on the evaluation stack so that we don't fully consume it, in case other
             // branches need to use it.
-            bool usingValueOnStack = (isBoolCondition || shouldMatchEquality) && !alwaysMatch;
-            if ( usingValueOnStack ) {
+            bool duplicatesStackValue = shouldMatchEquality && !isElse;
+            if ( duplicatesStackValue )
                 container.AddContent (Runtime.ControlCommand.Duplicate ());
-            }
 
-            _divertOnBranch = new Runtime.Divert ();
+            _conditionalDivert = new Runtime.Divert ();
 
-            Runtime.Branch branch;
+            // else clause is unconditional catch-all, otherwise the divert is conditional
+            _conditionalDivert.isConditional = !isElse;
 
-            if (isBoolCondition) {
-                if (boolRequired == true) {
-                    branch = new Runtime.Branch (trueDivert: _divertOnBranch);
-                } else {
-                    branch = new Runtime.Branch (falseDivert: _divertOnBranch);
-                }
-            } else {
+            // Need extra evaluation?
+            if( !isTrueBranch && !isElse ) {
 
-                bool needsEval = ownExpression || alwaysMatch;
-
+                bool needsEval = ownExpression != null;
                 if( needsEval )
                     container.AddContent (Runtime.ControlCommand.EvalStart ());
 
                 if (ownExpression)
                     ownExpression.GenerateIntoContainer (container);
 
+                // Uses existing duplicated value
                 if (shouldMatchEquality)
                     container.AddContent (Runtime.NativeFunctionCall.CallWithName ("=="));
 
-                if (alwaysMatch)
-                    container.AddContent (new Runtime.IntValue (1));
-
                 if( needsEval ) 
                     container.AddContent (Runtime.ControlCommand.EvalEnd ()); 
-
-                branch = new Runtime.Branch (trueDivert: _divertOnBranch);
             }
 
-            container.AddContent (branch);
+            // Will pop from stack if conditional
+            container.AddContent (_conditionalDivert);
 
             _contentContainer = GenerateRuntimeForContent ();
             _contentContainer.name = "b";
 
-            if( usingValueOnStack )
+            if( duplicatesStackValue )
                 _contentContainer.InsertContent (Runtime.ControlCommand.PopEvaluatedValue (), 0);
 
             container.AddToNamedContentOnly (_contentContainer);
@@ -147,13 +147,13 @@ namespace Ink.Parsed
 
         public override void ResolveReferences (Story context)
         {
-            _divertOnBranch.targetPath = _contentContainer.path;
+            _conditionalDivert.targetPath = _contentContainer.path;
 
             base.ResolveReferences (context);
         }
 
         Runtime.Container _contentContainer;
-        Runtime.Divert _divertOnBranch;
+        Runtime.Divert _conditionalDivert;
         Expression _ownExpression;
 
         Weave _innerWeave;

@@ -43,10 +43,13 @@ namespace Ink
             bool isFunc = identifier == "function";
             if (isFunc) {
                 Expect (Whitespace, "whitespace after the 'function' keyword");
-                knotName = Expect (Identifier, "the name of the function") as string;
+                knotName = Parse(Identifier);
             } else {
                 knotName = identifier;
             }
+
+            if (knotName == null)
+                Error ("Expected the name of the " + (isFunc ? "function" : "knot"));
 
             Whitespace ();
 
@@ -214,7 +217,9 @@ namespace Ink
 
             Whitespace ();
 
-            List<FlowBase.Argument> parameterNames = Parse (BracketedKnotDeclArguments);
+            var parameterNames = Expect (BracketedKnotDeclArguments, "declaration of arguments for EXTERNAL, even if empty, i.e. 'EXTERNAL "+funcName+"()'") as List<FlowBase.Argument>;
+            if (parameterNames == null)
+                parameterNames = new List<FlowBase.Argument> ();
 
             var argNames = parameterNames.ConvertAll<string> (arg => arg.name);
 

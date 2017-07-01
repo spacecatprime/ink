@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
@@ -9,7 +9,6 @@
     <Import_RootNamespace>Ink.Runtime</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="$(MSBuildThisFileDirectory)Branch.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)CallStack.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Container.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ControlCommand.cs" />
@@ -33,8 +32,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Value.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ChoicePoint.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Choice.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)Newtonsoft.Json.dll" />
+    <Compile Include="$(MSBuildThisFileDirectory)SimpleJson.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Tag.cs" />
   </ItemGroup>
 </Project>

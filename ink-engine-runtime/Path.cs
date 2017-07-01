@@ -1,16 +1,17 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Diagnostics;
 using Ink.Runtime;
 
 namespace Ink.Runtime
 {
-	internal class Path
+    internal class Path : IEquatable<Path>
 	{
         static string parentId = "^";
 
         // Immutable Component
-		internal class Component
+        internal class Component : IEquatable<Component>
 		{
 			public int index { get; private set; }
 			public string name { get; private set; }
@@ -51,7 +52,11 @@ namespace Ink.Runtime
 
             public override bool Equals (object obj)
             {
-                var otherComp = obj as Component;
+                return Equals (obj as Component);
+            }
+
+            public bool Equals(Component otherComp)
+            {
                 if (otherComp != null && otherComp.isIndex == this.isIndex) {
                     if (isIndex) {
                         return index == otherComp.index;   
@@ -74,7 +79,7 @@ namespace Ink.Runtime
 
 		public List<Component> components { get; private set; }
 
-        public bool isRelative { get; set; }
+        public bool isRelative { get; private set; }
 
 		public Component head 
 		{ 
@@ -95,13 +100,15 @@ namespace Ink.Runtime
 				if (components.Count >= 2) {
 					List<Component> tailComps = components.GetRange (1, components.Count - 1);
 					return new Path(tailComps);
-				} else {
-					return null;
+				} 
+
+                else {
+                    return Path.self;
 				}
 
 			}
 		}
-
+            
 		public int length { get { return components.Count; } }
 
 		public Component lastComponent 
@@ -138,14 +145,23 @@ namespace Ink.Runtime
 			components.AddRange (tail.components);
 		}
 
-		public Path(IEnumerable<Component> components) : this()
+		public Path(IEnumerable<Component> components, bool relative = false) : this()
 		{
 			this.components.AddRange (components);
+            this.isRelative = relative;
 		}
 
         public Path(string componentsString) : this()
         {
             this.componentsString = componentsString;
+        }
+
+        public static Path self {
+            get {
+                var path = new Path ();
+                path.isRelative = true;
+                return path;
+            }
         }
 
 		public Path PathByAppendingPath(Path pathToAppend)
@@ -180,18 +196,25 @@ namespace Ink.Runtime
                 else
                     return compsStr;
             }
-            set {
+            private set {
                 components.Clear ();
 
                 var componentsStr = value;
+
+                // Empty path, empty components
+                // (path is to root, like "/" in file system)
+                if (string.IsNullOrEmpty(componentsStr))
+                    return;
 
                 // When components start with ".", it indicates a relative path, e.g.
                 //   .^.^.hello.5
                 // is equivalent to file system style path:
                 //  ../../hello/5
                 if (componentsStr [0] == '.') {
-                    isRelative = true;
+                    this.isRelative = true;
                     componentsStr = componentsStr.Substring (1);
+                } else {
+                    this.isRelative = false;
                 }
 
                 var componentStrings = componentsStr.Split('.');
@@ -213,7 +236,11 @@ namespace Ink.Runtime
 
         public override bool Equals (object obj)
         {
-            var otherPath = obj as Path;
+            return Equals (obj as Path);
+        }
+
+        public bool Equals (Path otherPath)
+        {
             if (otherPath == null)
                 return false;
 
@@ -223,17 +250,7 @@ namespace Ink.Runtime
             if (otherPath.isRelative != this.isRelative)
                 return false;
 
-            // This function call doesn't seem to be equivalent - not sure why not?
-            //return otherPath.components.SequenceEqual (this.components);
-            for (int i = 0; i < this.components.Count; ++i) {
-                var c1 = this.components [i];
-                var c2 = otherPath.components [i];
-                if (!c1.Equals (c2)) {
-                    return false;
-                }
-            }
-
-            return true;
+            return otherPath.components.SequenceEqual (this.components);
         }
 
         public override int GetHashCode ()

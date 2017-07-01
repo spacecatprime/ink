@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using System.Diagnostics;
-using Newtonsoft.Json.Linq;
 
 namespace Ink.Runtime
 {
@@ -57,7 +56,7 @@ namespace Ink.Runtime
             public Element Copy()
             {
                 var copy = new Element (this.type, this.currentContainer, this.currentContentIndex, this.inExpressionEvaluation);
-                copy.temporaryVariables = this.temporaryVariables;
+                copy.temporaryVariables = new Dictionary<string,Object>(this.temporaryVariables);
                 return copy;
             }
         }
@@ -66,10 +65,49 @@ namespace Ink.Runtime
         {
             public List<Element> callstack;
             public int threadIndex;
+            public Runtime.Object previousContentObject;
 
             public Thread() {
                 callstack = new List<Element>();
             }
+
+			public Thread(Dictionary<string, object> jThreadObj, Story storyContext) : this() {
+                threadIndex = (int) jThreadObj ["threadIndex"];
+
+				List<object> jThreadCallstack = (List<object>) jThreadObj ["callstack"];
+				foreach (object jElTok in jThreadCallstack) {
+
+					var jElementObj = (Dictionary<string, object>)jElTok;
+
+                    PushPopType pushPopType = (PushPopType)(int)jElementObj ["type"];
+
+					Container currentContainer = null;
+					int contentIndex = 0;
+
+					string currentContainerPathStr = null;
+					object currentContainerPathStrToken;
+					if (jElementObj.TryGetValue ("cPath", out currentContainerPathStrToken)) {
+						currentContainerPathStr = currentContainerPathStrToken.ToString ();
+						currentContainer = storyContext.ContentAtPath (new Path(currentContainerPathStr)) as Container;
+                        contentIndex = (int) jElementObj ["idx"];
+					}
+
+                    bool inExpressionEvaluation = (bool)jElementObj ["exp"];
+
+					var el = new Element (pushPopType, currentContainer, contentIndex, inExpressionEvaluation);
+
+					var jObjTemps = (Dictionary<string, object>) jElementObj ["temp"];
+					el.temporaryVariables = Json.JObjectToDictionaryRuntimeObjs (jObjTemps);
+
+					callstack.Add (el);
+				}
+
+				object prevContentObjPath;
+				if( jThreadObj.TryGetValue("previousContentObject", out prevContentObjPath) ) {
+					var prevPath = new Path((string)prevContentObjPath);
+                    previousContentObject = storyContext.ContentAtPath(prevPath);
+                }
+			}
 
             public Thread Copy() {
                 var copy = new Thread ();
@@ -77,8 +115,36 @@ namespace Ink.Runtime
                 foreach(var e in callstack) {
                     copy.callstack.Add(e.Copy());
                 }
+                copy.previousContentObject = previousContentObject;
                 return copy;
             }
+
+			public Dictionary<string, object> jsonToken {
+				get {
+					var threadJObj = new Dictionary<string, object> ();
+
+					var jThreadCallstack = new List<object> ();
+					foreach (CallStack.Element el in callstack) {
+						var jObj = new Dictionary<string, object> ();
+						if (el.currentContainer) {
+							jObj ["cPath"] = el.currentContainer.path.componentsString;
+							jObj ["idx"] = el.currentContentIndex;
+						}
+						jObj ["exp"] = el.inExpressionEvaluation;
+						jObj ["type"] = (int) el.type;
+						jObj ["temp"] = Json.DictionaryRuntimeObjsToJObject (el.temporaryVariables);
+						jThreadCallstack.Add (jObj);
+					}
+
+					threadJObj ["callstack"] = jThreadCallstack;
+					threadJObj ["threadIndex"] = threadIndex;
+
+                    if (previousContentObject != null)
+                        threadJObj ["previousContentObject"] = previousContentObject.path.ToString();
+
+					return threadJObj;
+				}
+			}
         }
 
         public List<Element> elements {
@@ -86,6 +152,12 @@ namespace Ink.Runtime
                 return callStack;
             }
         }
+
+		public int depth {
+			get {
+				return elements.Count;
+			}
+		}
 
         public Element currentElement { 
             get { 
@@ -136,83 +208,29 @@ namespace Ink.Runtime
         // Unfortunately it's not possible to implement jsonToken since
         // the setter needs to take a Story as a context in order to
         // look up objects from paths for currentContainer within elements.
-        public void SetJsonToken(JToken token, Story storyContext)
+        public void SetJsonToken(Dictionary<string, object> jObject, Story storyContext)
         {
             _threads.Clear ();
 
-            var jObject = (JObject)token;
+            var jThreads = (List<object>) jObject ["threads"];
 
-            var jThreads = (JArray) jObject ["threads"];
-
-            foreach (JToken jThreadTok in jThreads) {
-
-                var thread = new Thread ();
-
-                JObject jThreadObj = (JObject) jThreadTok;
-                thread.threadIndex = jThreadObj ["threadIndex"].ToObject<int> ();
-
-                JArray jThreadCallstack = (JArray) jThreadObj ["callstack"];
-                foreach (JToken jElTok in jThreadCallstack) {
-
-                    JObject jElementObj = (JObject)jElTok;
-
-                    PushPopType pushPopType = (PushPopType) jElementObj ["type"].ToObject<int>();
-
-                    Container currentContainer = null;
-                    int contentIndex = 0;
-
-                    string currentContainerPathStr = null;
-                    JToken currentContainerPathStrToken;
-                    if (jElementObj.TryGetValue ("cPath", out currentContainerPathStrToken)) {
-                        currentContainerPathStr = currentContainerPathStrToken.ToString ();
-                        currentContainer = storyContext.ContentAtPath (new Path(currentContainerPathStr)) as Container;
-                        contentIndex = jElementObj ["idx"].ToObject<int> ();
-                    }
-
-                    bool inExpressionEvaluation = jElementObj ["exp"].ToObject<bool> ();
-
-                    var el = new Element (pushPopType, currentContainer, contentIndex, inExpressionEvaluation);
-
-                    var jObjTemps = (JObject) jElementObj ["temp"];
-                    el.temporaryVariables = Json.JObjectToDictionaryRuntimeObjs (jObjTemps);
-                        
-                    thread.callstack.Add (el);
-                }
-
+            foreach (object jThreadTok in jThreads) {
+                var jThreadObj = (Dictionary<string, object>)jThreadTok;
+                var thread = new Thread (jThreadObj, storyContext);
                 _threads.Add (thread);
             }
 
-            _threadCounter = jObject ["threadCounter"].ToObject<int> ();
+            _threadCounter = (int)jObject ["threadCounter"];
         }
             
         // See above for why we can't implement jsonToken
-        public JToken GetJsonToken() {
+        public Dictionary<string, object> GetJsonToken() {
 
-            var jObject = new JObject ();
+            var jObject = new Dictionary<string, object> ();
 
-            var jThreads = new JArray ();
+            var jThreads = new List<object> ();
             foreach (CallStack.Thread thread in _threads) {
-
-                var threadJObj = new JObject ();
-
-
-                var jThreadCallstack = new JArray ();
-                foreach (CallStack.Element el in thread.callstack) {
-                    var jObj = new JObject ();
-                    if (el.currentContainer) {
-                        jObj ["cPath"] = el.currentContainer.path.componentsString;
-                        jObj ["idx"] = el.currentContentIndex;
-                    }
-                    jObj ["exp"] = el.inExpressionEvaluation;
-                    jObj ["type"] = (int) el.type;
-                    jObj ["temp"] = Json.DictionaryRuntimeObjsToJObject (el.temporaryVariables);
-                    jThreadCallstack.Add (jObj);
-                }
-
-                threadJObj ["callstack"] = jThreadCallstack;
-                threadJObj ["threadIndex"] = thread.threadIndex;
-
-                jThreads.Add (threadJObj);
+				jThreads.Add (thread.jsonToken);
             }
 
             jObject ["threads"] = jThreads;
@@ -224,8 +242,8 @@ namespace Ink.Runtime
         public void PushThread()
         {
             var newThread = currentThread.Copy ();
-            newThread.threadIndex = _threadCounter;
             _threadCounter++;
+            newThread.threadIndex = _threadCounter;
             _threads.Add (newThread);
         }
 
@@ -234,7 +252,7 @@ namespace Ink.Runtime
             if (canPopThread) {
                 _threads.Remove (currentThread);
             } else {
-                Debug.Fail ("Can't pop thread");
+				throw new System.Exception("Can't pop thread");
             }
         }
 
@@ -268,7 +286,7 @@ namespace Ink.Runtime
                 callStack.RemoveAt (callStack.Count - 1);
                 return;
             } else {
-                Debug.Fail ("Mismatched push/pop in Callstack");
+				throw new System.Exception("Mismatched push/pop in Callstack");
             }
         }
 
@@ -276,11 +294,11 @@ namespace Ink.Runtime
         public Runtime.Object GetTemporaryVariableWithName(string name, int contextIndex = -1)
         {
             if (contextIndex == -1)
-                contextIndex = currentElementIndex;
+                contextIndex = currentElementIndex+1;
             
             Runtime.Object varValue = null;
 
-            var contextElement = callStack [contextIndex];
+            var contextElement = callStack [contextIndex-1];
 
             if (contextElement.temporaryVariables.TryGetValue (name, out varValue)) {
                 return varValue;
@@ -292,13 +310,17 @@ namespace Ink.Runtime
         public void SetTemporaryVariable(string name, Runtime.Object value, bool declareNew, int contextIndex = -1)
         {
             if (contextIndex == -1)
-                contextIndex = currentElementIndex;
+                contextIndex = currentElementIndex+1;
 
-            var contextElement = callStack [contextIndex];
+            var contextElement = callStack [contextIndex-1];
             
             if (!declareNew && !contextElement.temporaryVariables.ContainsKey(name)) {
                 throw new StoryException ("Could not find temporary variable to set: " + name);
             }
+
+            Runtime.Object oldValue;
+            if( contextElement.temporaryVariables.TryGetValue(name, out oldValue) )
+                ListValue.RetainListOriginsForAssignment (oldValue, value);
 
             contextElement.temporaryVariables [name] = value;
         }
@@ -312,12 +334,12 @@ namespace Ink.Runtime
             // Current temporary context?
             // (Shouldn't attempt to access contexts higher in the callstack.)
             if (currentElement.temporaryVariables.ContainsKey (name)) {
-                return currentElementIndex;
+                return currentElementIndex+1;
             } 
 
             // Global
             else {
-                return -1;
+                return 0;
             }
         }
             
@@ -333,8 +355,8 @@ namespace Ink.Runtime
             }
         }
 
-        private List<Thread> _threads;
-        public int _threadCounter;
+        List<Thread> _threads;
+        int _threadCounter;
     }
 }
 

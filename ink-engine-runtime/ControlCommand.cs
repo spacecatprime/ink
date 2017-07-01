@@ -19,11 +19,16 @@ namespace Ink.Runtime
             NoOp,
             ChoiceCount,
             TurnsSince,
+            ReadCount,
+            Random,
+            SeedRandom,
             VisitIndex,
             SequenceShuffleIndex,
             StartThread,
             Done,
             End,
+            ListFromInt,
+            ListRange,
             //----
             TOTAL_VALUES
         }
@@ -37,6 +42,11 @@ namespace Ink.Runtime
 
         // Require default constructor for serialisation
         public ControlCommand() : this(CommandType.NotSet) {}
+
+        internal override Object Copy()
+        {
+            return new ControlCommand (commandType);
+        }
 
         // The following static factory methods are to make generating these objects
         // slightly more succinct. Without these, the code gets pretty massive! e.g.
@@ -95,6 +105,21 @@ namespace Ink.Runtime
             return new ControlCommand(CommandType.TurnsSince);
         }
 
+        public static ControlCommand ReadCount ()
+        {
+            return new ControlCommand (CommandType.ReadCount);
+        }
+
+        public static ControlCommand Random ()
+        {
+            return new ControlCommand (CommandType.Random);
+        }
+
+        public static ControlCommand SeedRandom ()
+        {
+            return new ControlCommand (CommandType.SeedRandom);
+        }
+
         public static ControlCommand VisitIndex() {
             return new ControlCommand(CommandType.VisitIndex);
         }
@@ -113,6 +138,15 @@ namespace Ink.Runtime
 
         public static ControlCommand End() {
             return new ControlCommand (CommandType.End);
+        }
+
+        public static ControlCommand ListFromInt () {
+            return new ControlCommand (CommandType.ListFromInt);
+        }
+
+        public static ControlCommand ListRange ()
+        {
+            return new ControlCommand (CommandType.ListRange);
         }
 
         public override string ToString ()

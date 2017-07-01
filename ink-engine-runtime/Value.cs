@@ -13,6 +13,7 @@ namespace Ink.Runtime
         // Used in coersion
         Int,
         Float,
+        List,
         String,
 
         // Not used for coersion described above
@@ -55,9 +56,16 @@ namespace Ink.Runtime
                 return new StringValue ((string)val);
             } else if (val is Path) {
                 return new DivertTargetValue ((Path)val);
+            } else if (val is InkList) {
+                return new ListValue ((InkList)val);
             }
 
             return null;
+        }
+
+        internal override Object Copy()
+        {
+            return Create (valueObject);
         }
     }
 
@@ -133,7 +141,7 @@ namespace Ink.Runtime
             }
 
             if (newType == ValueType.String) {
-                return new StringValue("" + this.value);
+                return new StringValue("" + this.value.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
 
             throw new System.Exception ("Unexpected type cast of Value to new ValueType");
@@ -186,7 +194,7 @@ namespace Ink.Runtime
 
             if (newType == ValueType.Float) {
                 float parsedFloat;
-                if (float.TryParse (value, out parsedFloat)) {
+                if (float.TryParse (value, System.Globalization.NumberStyles.Float ,System.Globalization.CultureInfo.InvariantCulture, out parsedFloat)) {
                     return new FloatValue (parsedFloat);
                 } else {
                     return null;
@@ -235,7 +243,7 @@ namespace Ink.Runtime
         // Where the variable is located
         // -1 = default, unknown, yet to be determined
         // 0  = in global scope
-        // 1+ = callstack element index
+        // 1+ = callstack element index + 1 (so that the first doesn't conflict with special global scope)
         public int contextIndex { get; set; }
 
         public VariablePointerValue(string variableName, int contextIndex = -1) : base(variableName)
@@ -259,7 +267,92 @@ namespace Ink.Runtime
         {
             return "VariablePointerValue(" + variableName + ")";
         }
+
+        internal override Object Copy()
+        {
+            return new VariablePointerValue (variableName, contextIndex);
+        }
+    }
+
+    internal class ListValue : Value<InkList>
+    {
+        public override ValueType valueType {
+            get {
+                return ValueType.List;
+            }
+        }
+
+        // Truthy if it contains any non-zero items
+        public override bool isTruthy {
+            get {
+                foreach (var kv in value) {
+                    int listItemIntValue = kv.Value;
+                    if (listItemIntValue != 0)
+                        return true;
+                }
+                return false;
+            }
+        }
+                
+        public override Value Cast (ValueType newType)
+        {
+            if (newType == ValueType.Int) {
+                var max = value.maxItem;
+                if( max.Key.isNull )
+                    return new IntValue (0);
+                else
+                    return new IntValue (max.Value);
+            }
+
+            else if (newType == ValueType.Float) {
+                var max = value.maxItem;
+                if (max.Key.isNull)
+                    return new FloatValue (0.0f);
+                else
+                    return new FloatValue ((float)max.Value);
+            }
+
+            else if (newType == ValueType.String) {
+                var max = value.maxItem;
+                if (max.Key.isNull)
+                    return new StringValue ("");
+                else {
+                    return new StringValue (max.Key.ToString());
+                }
+            }
+
+            if (newType == valueType)
+                return this;
+
+            throw new System.Exception ("Unexpected type cast of Value to new ValueType");
+        }
+
+        public ListValue () : base(null) {
+            value = new InkList ();
+        }
+
+        public ListValue (InkList list) : base (null)
+        {
+            value = new InkList (list);
+        }
+
+        public ListValue (InkListItem singleItem, int singleValue) : base (null)
+        {
+            value = new InkList {
+                {singleItem, singleValue}
+            };
+        }
+
+        public static void RetainListOriginsForAssignment (Runtime.Object oldValue, Runtime.Object newValue)
+        {
+            var oldList = oldValue as ListValue;
+            var newList = newValue as ListValue;
+
+            // When assigning the emtpy list, try to retain any initial origin names
+            if (oldList && newList && newList.value.Count == 0)
+                newList.value.SetInitialOriginNames (oldList.value.originNames);
+        }
     }
         
 }
-
+ 

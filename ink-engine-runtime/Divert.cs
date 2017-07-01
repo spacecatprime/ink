@@ -17,6 +17,7 @@ namespace Ink.Runtime
             }
             set {
                 _targetPath = value;
+                _targetContent = null;
             } 
         }
         Path _targetPath;
@@ -56,6 +57,8 @@ namespace Ink.Runtime
 
         public bool isExternal { get; set; }
         public int externalArgs { get; set; }
+
+        public bool isConditional { get; set; }
 
 		public Divert ()
 		{
